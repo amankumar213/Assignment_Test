@@ -2,81 +2,69 @@ const dotenv = require("dotenv");
 dotenv.config();
 const mongoose = require("mongoose");
 const cors = require("cors");
-app.use(cors());
 const Jwt = require("jsonwebtoken");
-
 const express = require("express");
 const app = express();
-const port = process.env.PORT;
 
+app.use(cors());
 app.use(express.json());
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+const port = process.env.PORT || 3000;
+
+// Database connection
 mongoose
   .connect(process.env.MONGO_URL)
-  .then(() => {
-    console.log("database is connected");
-  })
-  .catch((e) => {
-    console.log("error connecting to database");
-  });
-const Doctor = new mongoose.Schema({
+  .then(() => console.log("Database connected"))
+  .catch(() => console.log("Error connecting to database"));
+
+// Doctor Schema
+const DoctorSchema = new mongoose.Schema({
   name: String,
   email: String,
   password: String,
 });
-const Doctor1 = mongoose.model("Doctor", Doctor);
+const DoctorModel = mongoose.model("Doctor", DoctorSchema);
 
+// Signup
 app.post("/signup", async (req, res) => {
-  const email = req.body.email;
-  const password = req.body.password;
-
-  const Doctor1 = await DoctorModel.create({
-    email,
-    password,
-  });
-
-  res.json({
-    message: "signed up",
-  });
+  const { name, email, password } = req.body;
+  const doctor = await DoctorModel.create({ name, email, password });
+  res.json({ message: "Signed up successfully", doctor });
 });
+
+// Signin
 app.post("/signin", async (req, res) => {
-  const email = req.body.email;
-  const password = req.body.password;
+  const { email, password } = req.body;
+  const user = await DoctorModel.findOne({ email, password });
 
-  try {
-    const user = await UserModel.findOne({
-      email: email,
-      password: password,
-    });
+  if (!user) return res.json({ response: "User not found" });
 
-    if (!user) {
-      res.json({
-        response: "user not found",
-      });
-      return;
-    }
-
-    res.json({
-      message: "signed in successfully",
-    });
-  } catch (e) {
-    res.json({
-      error: "wrong information",
-    });
-  }
+  const token = Jwt.sign({ _id: user._id }, process.env.JWT_SECRET);
+  res.json({ message: "Signed in successfully", token });
 });
 
-const Patient = new mongoose.Schema({
+// Auth middleware
+async function auth(req, res, next) {
+  const token = req.headers.token;
+  try {
+    const decoded = Jwt.verify(token, process.env.JWT_SECRET);
+    req.id = decoded._id;
+    next();
+  } catch {
+    res.json({ response: "Invalid token" });
+  }
+}
+
+// Patient Schema
+const PatientSchema = new mongoose.Schema({
   name: String,
   disease: String,
   wardNumber: Number,
   admittedDate: Date,
 });
-const PatientModel = mongoose.model("Patient", Patient);
+const PatientModel = mongoose.model("Patient", PatientSchema);
 
+// Routes
 app.post("/patients", async (req, res) => {
   const patient = new PatientModel(req.body);
   await patient.save();
@@ -87,31 +75,21 @@ app.get("/patients", async (req, res) => {
   const patients = await PatientModel.find();
   res.send(patients);
 });
+
 app.put("/patients/:id", async (req, res) => {
-  const patient = await PatientModel.findById(req.params.id);
+  const patient = await PatientModel.findByIdAndUpdate(
+    req.params.id,
+    req.body,
+    { new: true }
+  );
   res.send(patient);
 });
+
 app.delete("/patients/:id", auth, async (req, res) => {
   await PatientModel.findByIdAndDelete(req.params.id);
   res.send({ message: "Patient record deleted" });
 });
-async function auth(req, res, next) {
-  const token = req.headers.token;
 
-  try {
-    const isValidToken = await Jwt.verify(token, "JWT_SECRET");
-
-    if (!isValidToken) {
-      res.json({
-        response: "token problem",
-      });
-    }
-
-    req.id = isValidToken._id;
-    next();
-  } catch (e) {
-    res.json({
-      response: "server error",
-    });
-  }
-}
+app.listen(port, () => {
+  console.log(`🚀 Server running on port ${port}`);
+});
